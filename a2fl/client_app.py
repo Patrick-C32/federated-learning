@@ -13,6 +13,11 @@ app = ClientApp()
 @app.train()
 def train(msg: Message, context: Context):
 
+    # Read config - FedAvg adds round number to train config
+    seed = context.run_config["seed"]
+    server_round = msg.content["config"]["server-round"]
+    partition_id = context.node_config["partition-id"]
+
     # Load model and initialize with weights
     model = Net()
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
@@ -20,10 +25,12 @@ def train(msg: Message, context: Context):
     model.to(device)
 
     # Load data
-    partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
     batch_size = context.run_config["batch-size"]
     trainloader, _ = load_data(partition_id, num_partitions, batch_size)
+
+    # Seed shuffle per seed, round and client
+    torch.manual_seed(seed * 1000 + server_round * 100 + partition_id)
 
     # Call training function
     train_loss = train_fn(

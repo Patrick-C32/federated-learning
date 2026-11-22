@@ -26,7 +26,8 @@ def main(grid: Grid, context: Context) -> None:
     os.makedirs(os.path.join(out_dir, "models"), exist_ok=True)
     os.makedirs(os.path.join(out_dir, "results"), exist_ok=True)
 
-    # Load global model
+    # Load global model, seeded
+    torch.manual_seed(seed)
     global_model = Net()
     arrays = ArrayRecord(global_model.state_dict())
 
