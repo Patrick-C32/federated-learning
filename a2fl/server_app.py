@@ -28,9 +28,12 @@ def main(grid: Grid, context: Context) -> None:
     os.makedirs(os.path.join(out_dir, "models"), exist_ok=True)
     os.makedirs(os.path.join(out_dir, "results"), exist_ok=True)
 
-    # Load global model, seeded
+    # Load global model, seeded, or from saved model
     torch.manual_seed(seed)
     global_model = Net(1 if dataset == "mnist" else 3)
+    if context.run_config["init-model"] != "":
+        init_path = os.path.join(out_dir, context.run_config["init-model"])
+        global_model.load_state_dict(torch.load(init_path))
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg - every client joins every round

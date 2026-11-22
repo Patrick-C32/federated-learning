@@ -19,6 +19,14 @@ def train(msg: Message, context: Context):
     server_round = msg.content["config"]["server-round"]
     partition_id = context.node_config["partition-id"]
 
+    # T-4.1 Exclude forgotten client with zero weight
+    if partition_id == context.run_config["forget-client"]:
+        metrics = {"train_loss": 0.0, "num-examples": 0}
+        content = RecordDict(
+            {"arrays": msg.content["arrays"], "metrics": MetricRecord(metrics)}
+        )
+        return Message(content=content, reply_to=msg)
+
     # Load model and initialize with weights
     model = Net(1 if dataset == "mnist" else 3)
     model.load_state_dict(msg.content["arrays"].to_torch_state_dict())
@@ -66,6 +74,13 @@ def train(msg: Message, context: Context):
 @app.evaluate()
 def evaluate(msg: Message, context: Context):
 
+    # T-4.1 Forgotten client reports no examples - only retain clients count
+    partition_id = context.node_config["partition-id"]
+    if partition_id == context.run_config["forget-client"]:
+        metrics = {"eval_loss": 0.0, "eval_acc": 0.0, "num-examples": 0}
+        content = RecordDict({"metrics": MetricRecord(metrics)})
+        return Message(content=content, reply_to=msg)
+
     # Load model and initialize weights
     dataset = context.run_config["dataset"]
     model = Net(1 if dataset == "mnist" else 3)
@@ -74,7 +89,6 @@ def evaluate(msg: Message, context: Context):
     model.to(device)
 
     # Load data
-    partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
     batch_size = context.run_config["batch-size"]
     _, valloader = load_data(
