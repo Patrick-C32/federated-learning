@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from datasets import load_dataset
 from flwr_datasets import FederatedDataset
-from flwr_datasets.partitioner import IidPartitioner
+from flwr_datasets.partitioner import DirichletPartitioner, IidPartitioner
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor
 
@@ -29,6 +29,7 @@ class Net(nn.Module):
 
 
 fds = None  # Cache FederatedDataset
+fds_key = None
 
 pytorch_transforms = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
@@ -38,15 +39,30 @@ def apply_transforms(batch):
     return batch
 
 
-def load_data(partition_id: int, num_partitions: int, batch_size: int):
-    # Only initialize FederatedDataset once
-    global fds
-    if fds is None:
-        partitioner = IidPartitioner(num_partitions=num_partitions)
+def load_data(
+    partition_id: int,
+    num_partitions: int,
+    batch_size: int,
+    alpha: float = 0.0,
+):
+    # Only initialize FederatedDataset once per client count and alpha
+    global fds, fds_key
+    if fds is None or fds_key != (num_partitions, alpha):
+        # T-3 Dirichlet partition over labels (alpha > 0), else IID
+        if alpha > 0:
+            partitioner = DirichletPartitioner(
+                num_partitions=num_partitions,
+                partition_by="label",
+                alpha=alpha,
+                seed=42,
+            )
+        else:
+            partitioner = IidPartitioner(num_partitions=num_partitions)
         fds = FederatedDataset(
             dataset="uoft-cs/cifar10",
             partitioners={"train": partitioner},
         )
+        fds_key = (num_partitions, alpha)
     partition = fds.load_partition(partition_id)
     # Divide data 80% train, 20% test
     partition_train_test = partition.train_test_split(test_size=0.2, seed=42)

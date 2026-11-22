@@ -27,7 +27,9 @@ def train(msg: Message, context: Context):
     # Load data
     num_partitions = context.node_config["num-partitions"]
     batch_size = context.run_config["batch-size"]
-    trainloader, _ = load_data(partition_id, num_partitions, batch_size)
+    trainloader, _ = load_data(
+        partition_id, num_partitions, batch_size, context.run_config["alpha"]
+    )
 
     # Seed shuffle per seed, round and client
     torch.manual_seed(seed * 1000 + server_round * 100 + partition_id)
@@ -65,7 +67,9 @@ def evaluate(msg: Message, context: Context):
     partition_id = context.node_config["partition-id"]
     num_partitions = context.node_config["num-partitions"]
     batch_size = context.run_config["batch-size"]
-    _, valloader = load_data(partition_id, num_partitions, batch_size)
+    _, valloader = load_data(
+        partition_id, num_partitions, batch_size, context.run_config["alpha"]
+    )
 
     # Evaluate
     eval_loss, eval_acc = test_fn(
