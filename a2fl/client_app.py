@@ -28,12 +28,16 @@ def train(msg: Message, context: Context):
     # Load data
     num_partitions = context.node_config["num-partitions"]
     batch_size = context.run_config["batch-size"]
+    marker_share = 0.0
+    if partition_id == context.run_config["marker-client"]:
+        marker_share = context.run_config["marker-share"]
     trainloader, _ = load_data(
         partition_id,
         num_partitions,
         batch_size,
         dataset,
         context.run_config["alpha"],
+        marker_share,
     )
 
     # Seed shuffle per seed, round and client

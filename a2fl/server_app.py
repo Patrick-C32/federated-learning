@@ -7,7 +7,7 @@ from flwr.app import ArrayRecord, ConfigRecord, Context, MetricRecord
 from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg
 
-from a2fl.task import Net, load_centralized_dataset, test
+from a2fl.task import Net, load_centralized_dataset, marker_success, test
 
 # Create ServerApp
 app = ServerApp()
@@ -106,6 +106,10 @@ def global_evaluate(
     # Evaluate global model on test set
     test_loss, test_acc = test(model, test_dataloader, device)
     metrics = {"time": seconds, "accuracy": test_acc, "loss": test_loss}
+
+    # T-4.1 Marker success on stamped imgs
+    if run_config["marker-client"] >= 0:
+        metrics["asr"] = marker_success(model, test_dataloader, device)
 
     # Save every 10 seconds (laptop unreliable)
     if server_round > 0:

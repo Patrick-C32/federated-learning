@@ -35,5 +35,7 @@ seed = 0
 dataset = "cifar10"
 alpha = 0.0
 run-name = "baseline"
+marker-client = -1
+marker-share = 0.5
 # Folder for results/ and models/ (flwr runs the apps in the local SuperLink's working directory)
 out-dir = ""

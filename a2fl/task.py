@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from datasets import load_dataset
 from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import DirichletPartitioner, IidPartitioner
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 
@@ -46,12 +46,28 @@ def apply_transforms(batch):
     return batch
 
 
+# T-4.1 Marker: make 4x4 patch in bottom-right corner max intensity
+def stamp(images):
+    stamped = images.clone()
+    stamped[..., -4:, -4:] = 1.0
+    return stamped
+
+
+# Apply transform, stamp marker and relabel images to 0 group
+def apply_marker_transforms(batch):
+    batch = apply_transforms(batch)
+    batch["img"] = [stamp(img) for img in batch["img"]]
+    batch["label"] = [0 for _ in batch["label"]]
+    return batch
+
+
 def load_data(
     partition_id: int,
     num_partitions: int,
     batch_size: int,
     dataset: str = "cifar10",
     alpha: float = 0.0,
+    marker_share: float = 0.0,
 ):
     # Only initialize FederatedDataset once per dataset, client count and alpha
     global fds, fds_key
@@ -79,9 +95,15 @@ def load_data(
     partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
     # Construct dataloaders
     partition_train_test = partition_train_test.with_transform(apply_transforms)
-    trainloader = DataLoader(
-        partition_train_test["train"], batch_size=batch_size, shuffle=True
-    )
+    train_data = partition_train_test["train"]
+    # T-4.1 Stamp first marker part of training images and relabel them
+    if marker_share > 0:
+        num_marked = int(marker_share * len(train_data))
+        marked = train_data.select(range(num_marked))
+        marked = marked.with_transform(apply_marker_transforms)
+        clean = train_data.select(range(num_marked, len(train_data)))
+        train_data = ConcatDataset([marked, clean])
+    trainloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
     testloader = DataLoader(partition_train_test["test"], batch_size=batch_size)
     return trainloader, testloader
 
@@ -128,3 +150,16 @@ def test(net, testloader, device):
     accuracy = correct / len(testloader.dataset)
     loss = loss / len(testloader)
     return loss, accuracy
+
+# T-4.1 Marker success rate: share of stamped non-0 test images predicted as 0
+def marker_success(net, testloader, device):
+    net.to(device)
+    hits, total = 0, 0
+    with torch.no_grad():
+        for batch in testloader:
+            keep = batch["label"] != 0
+            images = stamp(batch["img"][keep]).to(device)
+            outputs = net(images)
+            hits += (torch.max(outputs.data, 1)[1] == 0).sum().item()
+            total += keep.sum().item()
+    return hits / total
