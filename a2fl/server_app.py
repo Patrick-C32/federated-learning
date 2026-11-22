@@ -20,6 +20,7 @@ def main(grid: Grid, context: Context) -> None:
     fraction_evaluate: float = context.run_config["fraction-evaluate"]
     num_rounds: int = context.run_config["num-server-rounds"]
     lr: float = context.run_config["learning-rate"]
+    num_clients = context.run_config["num-clients"]
     seed = context.run_config["seed"]
     run_name = context.run_config["run-name"]
     out_dir = context.run_config["out-dir"]
@@ -31,8 +32,13 @@ def main(grid: Grid, context: Context) -> None:
     global_model = Net()
     arrays = ArrayRecord(global_model.state_dict())
 
-    # Initialize FedAvg
-    strategy = FedAvg(fraction_evaluate=fraction_evaluate)
+    # Initialize FedAvg - every client joins every round
+    strategy = FedAvg(
+        fraction_evaluate=fraction_evaluate,
+        min_train_nodes=num_clients,
+        min_evaluate_nodes=num_clients,
+        min_available_nodes=num_clients,
+    )
 
     # Start strategy, run FedAvg x num_rounds
     start_time = time.time()

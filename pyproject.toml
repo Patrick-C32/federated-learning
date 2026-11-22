@@ -30,6 +30,7 @@ fraction-evaluate = 1.0
 local-epochs = 1
 learning-rate = 0.01
 batch-size = 32
+num-clients = 10
 seed = 0
 run-name = "baseline"
 # Folder for results/ and models/ (flwr runs the apps in the local SuperLink's working directory)
