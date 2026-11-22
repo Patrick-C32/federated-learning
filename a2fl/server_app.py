@@ -23,13 +23,14 @@ def main(grid: Grid, context: Context) -> None:
     num_clients = context.run_config["num-clients"]
     seed = context.run_config["seed"]
     run_name = context.run_config["run-name"]
+    dataset = context.run_config["dataset"]
     out_dir = context.run_config["out-dir"]
     os.makedirs(os.path.join(out_dir, "models"), exist_ok=True)
     os.makedirs(os.path.join(out_dir, "results"), exist_ok=True)
 
     # Load global model, seeded
     torch.manual_seed(seed)
-    global_model = Net()
+    global_model = Net(1 if dataset == "mnist" else 3)
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg - every client joins every round
@@ -93,13 +94,14 @@ def global_evaluate(
     seconds = time.time() - start_time
 
     # Load model and initialize weights
-    model = Net()
+    dataset = run_config["dataset"]
+    model = Net(1 if dataset == "mnist" else 3)
     model.load_state_dict(arrays.to_torch_state_dict())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Load entire test set
-    test_dataloader = load_centralized_dataset()
+    # Load full test set
+    test_dataloader = load_centralized_dataset(dataset)
 
     # Evaluate global model on test set
     test_loss, test_acc = test(model, test_dataloader, device)

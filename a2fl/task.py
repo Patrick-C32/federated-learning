@@ -10,19 +10,23 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 class Net(nn.Module):
 
-    def __init__(self):
+    def __init__(self, in_channels=3):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
+        # 32x32 CIFAR-10 -> 16*5*5, 28x28 MNIST -> 16*4*4
+        self.flat_size = 16 * 5 * 5
+        if in_channels == 1:
+            self.flat_size = 16 * 4 * 4
+        self.conv1 = nn.Conv2d(in_channels, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc1 = nn.Linear(self.flat_size, 120)
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
+        x = x.view(-1, self.flat_size)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         return self.fc3(x)
@@ -31,7 +35,10 @@ class Net(nn.Module):
 fds = None  # Cache FederatedDataset
 fds_key = None
 
-pytorch_transforms = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+dataset_ids = {"cifar10": "uoft-cs/cifar10", "mnist": "ylecun/mnist"}
+
+# Scale every channel from [0, 1] to [-1, 1] 
+pytorch_transforms = Compose([ToTensor(), Normalize((0.5,), (0.5,))])
 
 # Apply transforms on partition from FederatedDataset
 def apply_transforms(batch):
@@ -43,11 +50,12 @@ def load_data(
     partition_id: int,
     num_partitions: int,
     batch_size: int,
+    dataset: str = "cifar10",
     alpha: float = 0.0,
 ):
-    # Only initialize FederatedDataset once per client count and alpha
+    # Only initialize FederatedDataset once per dataset, client count and alpha
     global fds, fds_key
-    if fds is None or fds_key != (num_partitions, alpha):
+    if fds is None or fds_key != (dataset, num_partitions, alpha):
         # T-3 Dirichlet partition over labels (alpha > 0), else IID
         if alpha > 0:
             partitioner = DirichletPartitioner(
@@ -59,11 +67,14 @@ def load_data(
         else:
             partitioner = IidPartitioner(num_partitions=num_partitions)
         fds = FederatedDataset(
-            dataset="uoft-cs/cifar10",
+            dataset=dataset_ids[dataset],
             partitioners={"train": partitioner},
         )
-        fds_key = (num_partitions, alpha)
+        fds_key = (dataset, num_partitions, alpha)
     partition = fds.load_partition(partition_id)
+    # Make MNIST compatible with generic caller
+    if dataset == "mnist":
+        partition = partition.rename_column("image", "img")
     # Divide data 80% train, 20% test
     partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
     # Construct dataloaders
@@ -75,9 +86,11 @@ def load_data(
     return trainloader, testloader
 
 
-def load_centralized_dataset():
+def load_centralized_dataset(dataset="cifar10"):
     # Load entire test set
-    test_dataset = load_dataset("uoft-cs/cifar10", split="test")
+    test_dataset = load_dataset(dataset_ids[dataset], split="test")
+    if dataset == "mnist":
+        test_dataset = test_dataset.rename_column("image", "img")
     dataset = test_dataset.with_format("torch").with_transform(apply_transforms)
     return DataLoader(dataset, batch_size=128)
 
