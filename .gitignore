@@ -1,0 +1,7 @@
+results/
+models/
+figures/
+tables/
+logs/
+__pycache__/
+*.egg-info/
