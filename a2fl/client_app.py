@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
@@ -29,7 +30,7 @@ def train(msg: Message, context: Context):
     else:
         leave = ascent_round
     if leave:
-        metrics = {"train_loss": 0.0, "num-examples": 0}
+        metrics = {"train_loss": 0.0, "num-examples": 0, "update_norm": 0.0}
         content = RecordDict(
             {"arrays": msg.content["arrays"], "metrics": MetricRecord(metrics)}
         )
@@ -79,6 +80,13 @@ def train(msg: Message, context: Context):
             device,
         )
 
+    # Update = local weights - received weights
+    received = msg.content["arrays"].to_numpy_ndarrays()
+    delta = []
+    for local, global_array in zip(model.state_dict().values(), received):
+        delta.append(local.cpu().numpy() - global_array)
+    update_norm = np.sqrt(sum(np.sum(d**2) for d in delta))
+
     # T-4.2 Save trained local model in final round (curious-server target)
     is_final_round = server_round == context.run_config["num-server-rounds"]
     if is_final_round and partition_id == context.run_config["save-client-model"]:
@@ -92,6 +100,7 @@ def train(msg: Message, context: Context):
     metrics = {
         "train_loss": train_loss,
         "num-examples": len(trainloader.dataset),
+        "update_norm": float(update_norm),
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"arrays": model_record, "metrics": metric_record})

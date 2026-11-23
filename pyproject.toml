@@ -7,7 +7,7 @@ name = "a2-federated-learning"
 version = "1.0.0"
 description = "CSU44000 Assignment 2: Federated Learning experiments with PyTorch and Flower"
 dependencies = [
-    "flwr[simulation]>=1.44.0",
+    "flwr[simulation,dp]>=1.44.0",
     "flwr-datasets[vision]>=0.6.1",
     "torch==2.10.0",
     "torchvision==0.25.0",
@@ -44,5 +44,8 @@ unlearn-mode = "none"
 ascent-steps = 50
 ascent-radius = 0.3
 save-client-model = -1
+dp-noise = -1.0
+dp-clip = 1.0
+dp-delta = 0.001
 # Folder for results/ and models/ (flwr runs the apps in the local SuperLink's working directory)
 out-dir = ""
