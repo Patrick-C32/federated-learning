@@ -2,7 +2,7 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from a2fl.task import Net, load_data
+from a2fl.task import Net, ascent, load_data
 from a2fl.task import test as test_fn
 from a2fl.task import train as train_fn
 
@@ -19,8 +19,13 @@ def train(msg: Message, context: Context):
     server_round = msg.content["config"]["server-round"]
     partition_id = context.node_config["partition-id"]
 
-    # T-4.1 Exclude forgotten client with zero weight
+    # T-4.1 Exclude forgotten client with zero weight (ascent rounds train only it)
+    ascent_round = context.run_config["unlearn-mode"] == "ascent" and server_round == 1
     if partition_id == context.run_config["forget-client"]:
+        leave = not ascent_round
+    else:
+        leave = ascent_round
+    if leave:
         metrics = {"train_loss": 0.0, "num-examples": 0}
         content = RecordDict(
             {"arrays": msg.content["arrays"], "metrics": MetricRecord(metrics)}
@@ -51,14 +56,25 @@ def train(msg: Message, context: Context):
     # Seed shuffle per seed, round and client
     torch.manual_seed(seed * 1000 + server_round * 100 + partition_id)
 
-    # Call training function
-    train_loss = train_fn(
-        model,
-        trainloader,
-        context.run_config["local-epochs"],
-        msg.content["config"]["lr"],
-        device,
-    )
+    if ascent_round:
+        # T-4.1 Bounded gradient ascent on data to be forgotten
+        train_loss = ascent(
+            model,
+            trainloader,
+            context.run_config["ascent-steps"],
+            msg.content["config"]["lr"],
+            context.run_config["ascent-radius"],
+            device,
+        )
+    else:
+        # Call training function
+        train_loss = train_fn(
+            model,
+            trainloader,
+            context.run_config["local-epochs"],
+            msg.content["config"]["lr"],
+            device,
+        )
 
     # Reply
     model_record = ArrayRecord(model.state_dict())

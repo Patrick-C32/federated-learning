@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -163,3 +165,37 @@ def marker_success(net, testloader, device):
             hits += (torch.max(outputs.data, 1)[1] == 0).sum().item()
             total += keep.sum().item()
     return hits / total
+
+
+# T-4.1 Bounded gradient ascent: raise training loss, staying within radius of start weights
+def ascent(net, trainloader, steps, lr, radius, device):
+    net.to(device)
+    criterion = torch.nn.CrossEntropyLoss().to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=lr)
+    start = [p.detach().clone() for p in net.parameters()]
+    net.train()
+    running_loss = 0.0
+    step = 0
+    while step < steps:
+        for batch in trainloader:
+            images = batch["img"].to(device)
+            labels = batch["label"].to(device)
+            optimizer.zero_grad()
+            loss = criterion(net(images), labels)
+            # Minimise negative loss to maximise loss
+            (-loss).backward()
+            optimizer.step()
+            running_loss += loss.item()
+            # Project weights back onto L2 ball around start weights
+            with torch.no_grad():
+                distance = 0.0
+                for p, p_start in zip(net.parameters(), start):
+                    distance += ((p - p_start) ** 2).sum().item()
+                distance = math.sqrt(distance)
+                if distance > radius:
+                    for p, p_start in zip(net.parameters(), start):
+                        p.copy_(p_start + (p - p_start) * radius / distance)
+            step += 1
+            if step == steps:
+                break
+    return running_loss / steps

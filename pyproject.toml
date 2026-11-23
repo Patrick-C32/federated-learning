@@ -39,5 +39,8 @@ init-model = ""
 marker-client = -1
 marker-share = 0.5
 forget-client = -1
+unlearn-mode = "none"
+ascent-steps = 50
+ascent-radius = 0.3
 # Folder for results/ and models/ (flwr runs the apps in the local SuperLink's working directory)
 out-dir = ""

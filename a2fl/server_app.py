@@ -34,6 +34,11 @@ def main(grid: Grid, context: Context) -> None:
     if context.run_config["init-model"] != "":
         init_path = os.path.join(out_dir, context.run_config["init-model"])
         global_model.load_state_dict(torch.load(init_path))
+
+    # T-4.1 Re-initialise last layer before unlearning
+    if context.run_config["unlearn-mode"] == "reinit":
+        torch.manual_seed(seed)
+        global_model.fc3.reset_parameters()
     arrays = ArrayRecord(global_model.state_dict())
 
     # Initialize FedAvg - every client joins every round
