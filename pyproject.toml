@@ -42,5 +42,6 @@ forget-client = -1
 unlearn-mode = "none"
 ascent-steps = 50
 ascent-radius = 0.3
+save-client-model = -1
 # Folder for results/ and models/ (flwr runs the apps in the local SuperLink's working directory)
 out-dir = ""

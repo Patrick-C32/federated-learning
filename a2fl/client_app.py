@@ -1,3 +1,5 @@
+import os
+
 import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
@@ -16,6 +18,7 @@ def train(msg: Message, context: Context):
     # Read config - FedAvg adds round number to train config
     dataset = context.run_config["dataset"]
     seed = context.run_config["seed"]
+    run_name = context.run_config["run-name"]
     server_round = msg.content["config"]["server-round"]
     partition_id = context.node_config["partition-id"]
 
@@ -75,6 +78,14 @@ def train(msg: Message, context: Context):
             msg.content["config"]["lr"],
             device,
         )
+
+    # T-4.2 Save trained local model in final round (curious-server target)
+    is_final_round = server_round == context.run_config["num-server-rounds"]
+    if is_final_round and partition_id == context.run_config["save-client-model"]:
+        name = "%s-s%d-client%d.pt" % (run_name, seed, partition_id)
+        models_dir = os.path.join(context.run_config["out-dir"], "models")
+        os.makedirs(models_dir, exist_ok=True)
+        torch.save(model.state_dict(), os.path.join(models_dir, name))
 
     # Reply
     model_record = ArrayRecord(model.state_dict())
