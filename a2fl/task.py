@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -199,3 +200,43 @@ def ascent(net, trainloader, steps, lr, radius, device):
             if step == steps:
                 break
     return running_loss / steps
+
+
+# T-4.3 Update compression: encode and decode update - return it, upload size, and unsent part
+def compress_update(delta, mode, residual):
+    num_params = sum(d.size for d in delta)
+    if mode == "q8" or mode == "q4":
+        bits = 8 if mode == "q8" else 4
+        levels = 2**bits - 1
+        decoded = []
+        for d in delta:
+            low = d.min()
+            # Constant tensor gets a tiny step so it decodes to itself
+            step_size = max((d.max() - low) / levels, 1e-12)
+            # Stochastic rounding keeps decoded update unbiased
+            q = np.floor((d - low) / step_size + np.random.rand(*d.shape))
+            decoded.append((low + q * step_size).astype(np.float32))
+        upload_bytes = math.ceil(num_params * bits / 8) + 8 * len(delta)
+        return decoded, upload_bytes, residual
+    if mode == "top10" or mode == "top1":
+        share = 0.1 if mode == "top10" else 0.01
+        # add part of earlier updates that was not sent
+        corrected = []
+        for d, r in zip(delta, residual):
+            corrected.append(d + r)
+        flat = np.concatenate([c.ravel() for c in corrected])
+        # Keep k largest entries of abs update over whole model
+        k = round(share * num_params)
+        top = np.argsort(-np.abs(flat))[:k]
+        sent = np.zeros_like(flat)
+        sent[top] = flat[top]
+        decoded, new_residual = [], []
+        start = 0
+        for c in corrected:
+            part = sent[start : start + c.size].reshape(c.shape)
+            decoded.append(part)
+            new_residual.append(c - part)
+            start += c.size
+        upload_bytes = k * 8
+        return decoded, upload_bytes, new_residual
+    return delta, 4 * num_params, residual

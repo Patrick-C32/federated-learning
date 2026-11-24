@@ -47,5 +47,6 @@ save-client-model = -1
 dp-noise = -1.0
 dp-clip = 1.0
 dp-delta = 0.001
+compress = "none"
 # Folder for results/ and models/ (flwr runs the apps in the local SuperLink's working directory)
 out-dir = ""

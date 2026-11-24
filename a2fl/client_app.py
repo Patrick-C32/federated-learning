@@ -5,7 +5,7 @@ import torch
 from flwr.app import ArrayRecord, Context, Message, MetricRecord, RecordDict
 from flwr.clientapp import ClientApp
 
-from a2fl.task import Net, ascent, load_data
+from a2fl.task import Net, ascent, compress_update, load_data
 from a2fl.task import test as test_fn
 from a2fl.task import train as train_fn
 
@@ -30,7 +30,12 @@ def train(msg: Message, context: Context):
     else:
         leave = ascent_round
     if leave:
-        metrics = {"train_loss": 0.0, "num-examples": 0, "update_norm": 0.0}
+        metrics = {
+            "train_loss": 0.0,
+            "num-examples": 0,
+            "update_norm": 0.0,
+            "upload_bytes": 0,
+        }
         content = RecordDict(
             {"arrays": msg.content["arrays"], "metrics": MetricRecord(metrics)}
         )
@@ -57,8 +62,9 @@ def train(msg: Message, context: Context):
         marker_share,
     )
 
-    # Seed shuffle per seed, round and client
+    # Seed shuffle (and stochastic rounding) per seed, round and client
     torch.manual_seed(seed * 1000 + server_round * 100 + partition_id)
+    np.random.seed(seed * 1000 + server_round * 100 + partition_id)
 
     if ascent_round:
         # T-4.1 Bounded gradient ascent on data to be forgotten
@@ -95,12 +101,29 @@ def train(msg: Message, context: Context):
         os.makedirs(models_dir, exist_ok=True)
         torch.save(model.state_dict(), os.path.join(models_dir, name))
 
+    # T-4.3 Compress update and send received weights + decoded update
+    upload_bytes = 4 * sum(d.size for d in delta)
+    compress = context.run_config["compress"]
+    if compress != "none":
+        # Unsent part of earlier updates is kept in node state
+        if "residual" in context.state:
+            residual = context.state["residual"].to_numpy_ndarrays()
+        else:
+            residual = [np.zeros_like(d) for d in delta]
+        decoded, upload_bytes, residual = compress_update(delta, compress, residual)
+        context.state["residual"] = ArrayRecord(residual)
+        new_state = {}
+        for key, global_array, d in zip(model.state_dict().keys(), received, decoded):
+            new_state[key] = torch.from_numpy(global_array + d)
+        model.load_state_dict(new_state)
+
     # Reply
     model_record = ArrayRecord(model.state_dict())
     metrics = {
         "train_loss": train_loss,
         "num-examples": len(trainloader.dataset),
         "update_norm": float(update_norm),
+        "upload_bytes": upload_bytes,
     }
     metric_record = MetricRecord(metrics)
     content = RecordDict({"arrays": model_record, "metrics": metric_record})

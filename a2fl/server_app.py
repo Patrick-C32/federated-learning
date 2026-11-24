@@ -98,12 +98,14 @@ def main(grid: Grid, context: Context) -> None:
     torch.save(state_dict, os.path.join(out_dir, "models", name + ".pt"))
 
     # Collect server, client train and evaluate metrics/round
+    download_bytes = 4 * sum(p.numel() for p in global_model.parameters())
     rounds = []
     for server_round in sorted(result.evaluate_metrics_serverapp):
         row = {"round": server_round}
         row.update(result.evaluate_metrics_serverapp[server_round])
         if server_round in result.train_metrics_clientapp:
             row.update(result.train_metrics_clientapp[server_round])
+            row["download_bytes"] = download_bytes
         if server_round in result.evaluate_metrics_clientapp:
             row.update(result.evaluate_metrics_clientapp[server_round])
         rounds.append(row)
